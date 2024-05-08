@@ -1,6 +1,0 @@
-1. Substitution
--handle infinite types case 
-i.e. a:b is one constraint, b:a->c is another constraint
-
-2. Type Checking
--handle built-in, strict operators

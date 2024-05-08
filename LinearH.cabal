@@ -34,7 +34,7 @@ library linearh-lib
                         GraphReduction
                         
 
-    build-depends:  base ^>=4.18.0.0,
+    build-depends:  base,
                     containers,
                     mtl,
                     transformers,
@@ -51,7 +51,7 @@ executable LinearH
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
-    build-depends:  base ^>=4.18.0.0,
+    build-depends:  base,
                     linearh-lib
 
     hs-source-dirs:   src
