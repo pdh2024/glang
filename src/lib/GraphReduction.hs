@@ -1,218 +1,298 @@
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TupleSections #-}
 
 module GraphReduction where
 
+import Data.Functor ((<&>))
 import Control.Monad.ST
+import qualified Data.Vector.Mutable as V
 import Data.Array.ST
-import Data.Array
+import Data.Array.Base (getNumElements)
 import Control.Monad (liftM2)
+import Control.Monad.Loops
 import Control.Monad.Reader
 import Control.Monad.State
 import qualified Data.Map as M
 import Data.Maybe (fromJust)
-import Data.Functor.Identity
 import Expression
+import Debug.Trace (trace)
 
-data Node = AppNode | ExprNode Expr | Nil deriving (Show, Eq)
+data Node = 
+        LitNode TypeName Value
+    |   VarNode VarName
+    |   AbstNode
+    |   OpNode OpName
+    |   AppNode
+    |   LetNode VarName
+    |   Nil
+    deriving (Show, Eq)
 
-graphToExpr :: Int -> STArray s Int Node -> ST s Expr
-graphToExpr idx arr = do
-    elem <- readArray arr idx
-    case elem of
-        AppNode -> liftM2 App (graphToExpr (2*idx+1) arr) (graphToExpr (2*idx+2) arr)
-        ExprNode e -> return e
-
-opArities :: M.Map OpName Int
-opArities = M.fromList [("+", 2), ("t", 3), ("*", 2)]
-
-literalToInt :: Expr -> Int
-literalToInt (Literal _ x) = read x
-
-reductionRule :: OpName -> [Expr] -> Expr
-reductionRule "+" args = let [x,y] = map literalToInt args in Literal "Int" $ show (x + y)
-reductionRule "t" args = let [x,y,z] = map literalToInt args in Literal "Int" $ show (x + y + z)
-reductionRule "*" args = let [x,y] = map literalToInt args in Literal "Int" $ show (x * y)
-
-levels :: Expr -> Int
-levels (App e1 e2) = 1 + max (levels e1) (levels e2)
-levels (Let _ _ e2) = levels e2
-levels _ = 0
+appBranches :: Expr -> Int
+appBranches (Let _ _ e2) = appBranches e2
+appBranches (App e1 e2) = 1 + max (appBranches e1) (appBranches e2)
+appBranches expr = 0
 
 size :: Expr -> Int
-size expr = go (levels expr)
-            where   go :: Int -> Int 
+size expr = 1 + go (appBranches expr)
+            where   go 0 = 0
                     go 1 = 2
                     go n = 2^n + go (n-1)
 
-type Reduction = forall s. StateT (M.Map VarName (Expr, Bool)) (ST s) Expr
+type Reduction a = forall s. StateT (V.STVector s Node, M.Map VarName (Int, Bool)) (ST s) a
 
-reduce' :: Maybe VarName -> Expr -> Reduction
-reduce' var expr = do
-    map <- get
-    arr <- lift (newArray (0, size expr) Nil :: ST s (STArray s Int Node))
-    populate expr 0 arr
-    normalize arr
-    expr' <- lift $ graphToExpr 0 arr
-    case var of
-        Nothing -> return expr'
-        Just v -> do
-            put $ M.adjust (const (expr', True)) v map
-            return expr'
+write :: Int -> Node -> Reduction ()
+write idx node = do
+    vec <- gets fst
+    map <- gets snd
+    let length = V.length vec
+    vec' <- if idx >= length
+                then lift $ V.grow vec length
+            else pure vec
+    put (vec', map)
+    lift $ V.write vec' idx node
 
-reduce :: Expr -> Reduction
-reduce (Var v) = do
-    map <- get
-    let (expr, whnf) = fromJust $ M.lookup v map
-    if whnf
-        then return expr
-    else reduce' (Just v) expr
-reduce expr@(App _ _) = reduce' Nothing expr
-reduce expr@(Let {}) = reduce' Nothing expr
+populate :: Int -> Expr -> Reduction ()
+populate idx (Literal t v) = write idx (LitNode t v)
+populate idx (Var v) = write idx (VarNode v)
+populate idx (Op o) = write idx (OpNode o) 
+populate idx expr = do
+    case expr of
+        Abst param body -> do
+            write idx AbstNode 
+            populate (l idx) (Var param) 
+            populate (r idx) body 
+        App e1 e2 -> do
+            write idx AppNode 
+            populate (l idx) e1 
+            populate (r idx) e2
+        Let v e1 e2 -> do
+            modify (M.insert v (l idx, False) <$>)
+            write idx (LetNode v) 
+            populate (l idx) e1 
+            populate (r idx) e2
 
-reduce expr = return expr
+graphToExpr :: Int -> Reduction Expr
+graphToExpr idx = do
+    vec <- gets fst
+    node <- lift $ V.read vec idx
+    case node of
+        LitNode t v -> return $ Literal t v
+        VarNode v -> return $ Var v
+        AbstNode -> do
+            (Var param) <- graphToExpr (l idx) 
+            graphToExpr (r idx) <&> Abst param
+        OpNode o -> return $ Op o
+        AppNode -> liftM2 App (graphToExpr (l idx)) (graphToExpr (r idx))
+        LetNode _ -> graphToExpr (r idx) 
 
-reduceTL :: M.Map VarName (Expr, Bool) -> Expr -> Expr
-reduceTL map expr = runST $ evalStateT (reduce expr) map
+reduce' :: Expr -> Reduction Expr
+reduce' expr = do
+    populate 0 expr 
+    normalize 0 
+    graphToExpr 0 
 
-populate :: Expr -> Int -> STArray s Int Node -> StateT (M.Map VarName (Expr, Bool)) (ST s) () 
-populate (App e1 e2) idx arr = do
-    lift $ writeArray arr idx AppNode
-    populate e1 (2*idx+1) arr
-    populate e2 (2*idx+2) arr
+reduce :: Expr -> Expr
+reduce expr = runST $ do
+    graph <- V.replicate (size expr) Nil
+    evalStateT (reduce' expr) (graph, M.empty)
 
-populate (Let v e1 e2) idx arr = do
-    map <- get
-    put $ M.insert v (e1, False) map
-    populate e2 idx arr
+writeFrom :: Int -> Int -> Reduction ()
+writeFrom fromIdx toIdx = do
+    vec <- gets fst
+    node <- lift $ V.read vec fromIdx
+    case node of
+        AbstNode -> do
+            write toIdx node 
+            writeFrom (l fromIdx) (l toIdx) 
+            writeFrom (r fromIdx) (r toIdx) 
+        AppNode -> do
+            write toIdx node 
+            writeFrom (l fromIdx) (l toIdx) 
+            writeFrom (r fromIdx) (r toIdx) 
+        LetNode _ -> do
+            writeFrom (r fromIdx) (r toIdx) 
+        _ -> write toIdx node 
 
-populate expr idx arr = do
-    lift $ writeArray arr idx (ExprNode expr)
 
-unwind :: Int -> STArray s Int Node -> ST s (Int, [Int])
-unwind idx arr = go idx [] arr 
-                    where   go :: Int -> [Int] -> STArray s Int Node -> ST s (Int, [Int])
-                            go idx stack arr = do
-                                e <- readArray arr idx
-                                case e of
-                                    AppNode -> do
-                                        go (2*idx+1) ((2*idx+2) : stack) arr
-                                    ExprNode _ -> return (idx, stack)
+unwind :: Int -> V.STVector s Node -> StateT ([Int], [Int]) (ST s) (Int, [Int], [Int])
+unwind idx vec = do
+    node <- lift $ V.read vec idx
+    case node of
+        AppNode -> do
+            noder <- lift $ V.read vec (r idx)
+            (stack, preds) <- get
+            put (r idx : stack, idx : preds)
+            unwind (l idx) vec
+        LetNode _ -> do
+            noder <- lift $ V.read vec (r idx)
+            unwind (r idx) vec
+        _ -> do
+            (stack, preds) <- get
+            return (idx, stack, preds)
 
 rewind :: Int -> Int -> Int
 rewind idx 0 = idx
 rewind idx count = rewind (div (idx - 1) 2) (count - 1) 
 
-normalize :: STArray s Int Node -> StateT (M.Map VarName (Expr, Bool)) (ST s) ()
-normalize arr = do
-    map <- get
-    (outerIdx, stack) <- lift $ unwind 0 arr
-    whnf <- apply outerIdx stack arr
-    if whnf
-        then return ()
-    else normalize arr
+apply :: Int -> [Int] -> [Int] -> Reduction Bool
+apply outerIdx [] _ = do
+    vec <- gets fst
+    outer <- lift $ V.read vec outerIdx
+    case outer of
+        VarNode v -> do
+            vidx <- gets (fst . fromJust . M.lookup v . snd)
+            writeFrom vidx outerIdx 
+            return True
+        _ -> return True
 
-apply :: Int -> [Int] -> STArray s Int Node -> StateT (M.Map VarName (Expr, Bool)) (ST s) Bool
-apply _ [] _ = return True
+apply outerIdx stack preds = do
+    vec <- gets fst
+    outer <- lift $ V.read vec outerIdx
+    case outer of
+        VarNode v -> do
+            vidx <- gets (fst . fromJust . M.lookup v . snd)
+            writeFrom vidx outerIdx 
+            apply outerIdx stack preds
+        OpNode o -> do
+            let arity = fromJust $ M.lookup o opArities
+            if length stack >= arity
+                then do
+                    let stack' = take arity stack
+                    forM_ stack' normalize
+                    args <- lift $ mapM (V.read vec) stack'
+                    let predIdx = preds !! (arity-1)
+                    reductionRule predIdx args o 
+                    return False 
+            else return True 
+        AbstNode -> do
+            let predIdx = head preds
+            let paramIdx = l outerIdx
+            let argIdx = head stack
+            let bodyIdx = r outerIdx
 
-apply outerIdx stack arr = do
-    map <- get
-    outer <- lift $ graphToExpr outerIdx arr
-    let outer' = case outer of
-                    Var v -> fst . fromJust $ M.lookup v map
-                    _ -> outer
-    case outer' of
-        Op o -> let arity = (fromJust $ M.lookup o opArities)
-                    in  if length stack >= arity
-                            then do
-                                let go = flip graphToExpr $ arr
-                                args <- lift $ mapM go (take arity stack)
-                                args' <- mapM reduce args
-                                let expr' = reductionRule o args'
-                                let predIdx = rewind outerIdx arity
-                                lift $ updatePred predIdx expr' arr
-                                return False
-                        else return True
-        Abst param body -> do
-            let go = flip graphToExpr $ arr
-            arg <- lift $ go $ head stack
-            expr' <- lift $ runReaderT (instantiate param body arg) map
-            let predIdx = rewind outerIdx 1
-            lift $ updatePred predIdx expr' arr
-            return False 
+            bind bodyIdx paramIdx argIdx
+            writeFrom bodyIdx predIdx
+            return False
 
-instantiate :: VarName -> Expr -> Expr -> ReaderT (M.Map VarName (Expr, Bool)) (ST s) Expr
-instantiate param body arg = do
-    map <- ask
-    case body of
-        Var b ->    if b == param
-                        then return arg
-                    else return $ fst . fromJust $ M.lookup b map
-        App e1 e2 -> liftM2 App (instantiate param e1 arg) (instantiate param e2 arg)
-        Abst innerParam innerBody ->    if innerParam == param
-                                            then return innerBody
-                                        else do
-                                            innerBody' <- instantiate param innerBody arg
-                                            return $ Abst innerParam innerBody'
-        Op _ -> return body
-        Literal _ _ -> return body
+bind :: Int -> Int -> Int -> Reduction ()
+bind idx paramIdx argIdx = do
+    vec <- gets fst
+    VarNode param <- lift $ V.read vec paramIdx
+    node <- lift $ V.read vec idx
+    
+    case node of
+        VarNode b ->    when (b == param) $ writeFrom argIdx idx
+        AbstNode -> do
+            let paramIdx' = l idx
+            VarNode param' <- lift $ V.read vec paramIdx'
+            unless (param' == param) $ bind (r idx) paramIdx argIdx
+        AppNode -> do
+            bind (l idx) paramIdx argIdx
+            bind (r idx) paramIdx argIdx
+        OpNode _ -> return ()
+        LitNode _ _ -> return ()
+        LetNode v -> do
+            if v == param
+                then return ()
+            else do
+                bind (l idx) paramIdx argIdx
+                bind (r idx) paramIdx argIdx 
 
-updatePred :: Int -> Expr -> STArray s Int Node -> ST s ()
-updatePred predIdx expr' arr = evalStateT (populate expr' predIdx arr) M.empty
+normalize' :: Int -> Reduction Bool
+normalize' idx = do
+    vec <- gets fst
+    (outerIdx, stack, preds) <- lift $ evalStateT (unwind idx vec) ([], [])
+    apply outerIdx stack preds
+    
+normalize :: Int -> Reduction ()
+normalize idx = do
+    vec <- gets fst
+    node <- lift $ V.read vec idx
+    case node of 
+        VarNode v -> do
+            (vidx, whnf) <- gets (fromJust . M.lookup v . snd)
+            if whnf
+                then writeFrom vidx idx 
+            else do
+                iterateUntil id (normalize' vidx)
+                modify (M.adjust (const (vidx, True)) v <$>)
+                writeFrom vidx idx 
+        _ -> void $ iterateUntil id (normalize' idx)
 
--- Testing --
+-- Built-in operations
 
--- Built-in
+valToInt :: Value -> Int
+valToInt = read
 
-li :: Value -> Expr
-li = Literal "Int"
+opArities :: M.Map OpName Int
+opArities = M.fromList $ [("+", 2)]
 
-b1 :: Expr
-b1 = App (App (Op "+") (li "3")) (li "4")
+reductionRule :: Int -> [Node] -> OpName -> Reduction ()
+reductionRule idx [LitNode _ x, LitNode _ y] "+" = do
+    let xInt = valToInt x
+    let yInt = valToInt y
+    let node = LitNode "Int" (show $ xInt + yInt)
+    write idx node 
 
-b2 :: Expr
-b2 = Let "f" (Op "+") (App (App (Var "f") (li "3")) (li "4"))
+-- Index helper functions
 
-b3 :: Expr
-b3 = Let "f" (Op "t") (App (App (App (Var "f") (li "3")) (li "4")) (li "5"))
+l :: Int -> Int
+l idx = 2*idx+1
 
-b4 :: Expr
-b4 = App (App (Op "+") (App (App (Op "+") (li "3")) (li "4"))) (li "5")
+r :: Int -> Int
+r idx = 2*idx+2
 
-b5 :: Expr
-b5 = Let "x" (App (App (Op "+") (li "3")) (li "4")) (App (App (Op "+") (Var "x")) (li "2"))
+-- Debugging 
 
-b6 :: Expr
-b6 = App (App (Op "*") (li "4")) (li "5")
+debugNode :: Node -> String -> Reduction ()
+debugNode node msg | trace (msg ++ show node) True = return ()
 
--- Abstractions
+-- Testing
 
-a1 :: Expr
-a1 = Abst "x" (App (App (Op "*") (Var "x")) (Var "x"))
+li :: Int -> Expr
+li val = Literal "Int" (show val)
 
-a1' :: Expr
-a1' = App a1 (li "3")
+-- 5 => 5
+e1 :: Expr
+e1 = li 5
 
+-- 4 + 5 => 9
+e2 :: Expr
+e2 = App (App (Op "+") (li 4)) (li 5)
 
--- Outputs -- 
+-- Let v = 3 in v => 3
+e3 :: Expr
+e3 = Let "v" (li 3) (Var "v")
 
-bo1 :: Expr
-bo1 = reduceTL M.empty b1
+-- Let x = 1 + 2 in x + 5 => 8
+e4 :: Expr
+e4 = Let "x" (App (App (Op "+") (li 1)) (li 2)) $ App (App (Op "+") (Var "x")) (li 5)
 
-bo2 :: Expr
-bo2 = reduceTL M.empty b2
+-- (\x -> x) 4 => 4
+e5 :: Expr
+e5 = App (Abst "x" (Var "x")) (li 4)
 
-bo3 :: Expr
-bo3 = reduceTL M.empty b3
+-- Let id = \x -> x in id 4 => 4
+e6 :: Expr
+e6 = Let "id" (Abst "x" (Var "x")) (App (Var "id") (li 4))
 
-bo4 :: Expr
-bo4 = reduceTL M.empty b4
+-- Let f = \x -> 4 in f 3 => 4
+e7 :: Expr
+e7 = Let "f" (Abst "x" (li 4)) (App (Var "f") (li 3))
 
-bo5 :: Expr
-bo5 = reduceTL M.empty b5
+-- Let const = \x -> \y -> x in const 1 10 => 1
+e8 :: Expr
+e8 = Let "const" (Abst "x" (Abst "y" (Var "x"))) (App (App (Var "const") (li 1)) (li 10))
 
-bo6 :: Expr
-bo6 = reduceTL M.empty b6
+-- Let shadow = \x -> \x -> x in shadow 1 2 => 2
+e9 :: Expr
+e9 = Let "shadow" (Abst "x" (Abst "x" (Var "x"))) (App (App (Var "shadow") (li 1)) (li 2))
 
-ao1 :: Expr
-ao1 = reduceTL M.empty a1'
+-- Let const = \x -> \y -> x in (Let id = \x -> x in const id 4) => \x -> x
+e10 :: Expr
+e10 = Let "const" (Abst "x" (Abst "y" (Var "x"))) (Let "id" (Abst "x" (Var "x")) (App (App (Var "const") (Var "id")) (li 4)))
+
+-- e10 6 => 6
+e11 :: Expr
+e11 = App e10 (li 6)
 

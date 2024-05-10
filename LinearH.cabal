@@ -38,7 +38,9 @@ library linearh-lib
                     containers,
                     mtl,
                     transformers,
-                    array
+                    array,
+                    monad-loops,
+                    vector
     
     hs-source-dirs: src/lib
     default-language: Haskell2010
