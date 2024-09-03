@@ -26,7 +26,8 @@ library glang-lib
                         GMachine,
                         Parser,
                         LambdaLifting,
-                        Builder
+			            LowerToGCode,
+			            GLang
     
     build-depends:  base,
                     containers,

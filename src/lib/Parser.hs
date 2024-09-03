@@ -13,13 +13,14 @@ import Text.Megaparsec hiding (State)
 import Text.Megaparsec.Char
 import Text.Megaparsec.Debug
 import qualified Data.Text as T
+import qualified Data.Text.IO as TextIO
 import qualified Text.Megaparsec.Char.Lexer as L
 
 import Expression
-import LambdaLifting
-import GMachine
 
 type Parser = Parsec Void Text
+
+-- Temporary datatype for types
 
 data Type =
         Prim VarName 
@@ -37,11 +38,12 @@ kw = ["let" ,"in"]
 
 -- Helper parsers and combinators -- 
 
--- Given a list of parsers, return a parser that tries each one sequentially, and backtracks upon failure 
+-- Given a list of parsers, returns a parser that tries each one sequentially, and backtracks upon failure 
 choice' :: [Parser a] -> Parser a
 choice' = foldl1' ((<|>) . try)
 
 -- Consume whitespace and comments
+
 sc :: Parser ()
 sc = L.space space1 (L.skipLineComment "--") (L.skipBlockComment "/*" "*/")
 
@@ -72,16 +74,16 @@ binary :: Text -> (Expr -> Expr -> Expr) -> Operator Parser Expr
 binary opName f = InfixL $ f <$ symbol opName
 
 add :: Operator Parser Expr
-add = binary "+" (App . App (Op "+"))
+add = binary "+" (App . App (Var "+"))
 
 subtract :: Operator Parser Expr
-subtract = binary "-" (App . App (Op "-"))
+subtract = binary "-" (App . App (Var "-"))
 
 multiply :: Operator Parser Expr
-multiply = binary "*" (App . App (Op "*"))
+multiply = binary "*" (App . App (Var "*"))
 
 divide :: Operator Parser Expr
-divide = binary "/" (App . App (Op "/"))
+divide = binary "/" (App . App (Var "/"))
 
 operatorTable :: [[Operator Parser Expr]]
 operatorTable = [[Parser.negate, Parser.sin, Parser.cos], [multiply, divide], [add, Parser.subtract]]
@@ -120,7 +122,7 @@ parseOp = makeExprParser parseTerm operatorTable
 
 parseApp :: Parser Expr
 parseApp = do
-    x <- choice [parens parseExpr, parseVar]
+    x <- parseVar
     xs <- many $ choice [parens parseExpr, parseLiteral, parseVar]
     case xs of
         [] -> fail "No argument applied to function."
@@ -134,7 +136,7 @@ parseLet = do
     Let x e1 <$> parseExpr
 
 parseExpr :: Parser Expr
-parseExpr = choice' [parseAbst, parseLet, parseOp, parseApp, parseLiteral, parseVar]
+parseExpr = choice' [sc *> parens parseExpr, parseAbst, parseLet, parseOp, parseApp, parseLiteral, parseVar]
 
 -- Core parsers --
 
@@ -185,3 +187,12 @@ isTypeSig :: ParserResult -> Bool
 isTypeSig (TypeSig _) = True
 isTypeSig _ = False
     
+-- Parsing a source file
+
+parseFile :: FilePath -> IO (Either (ParseErrorBundle Text Void) [ParserResult])
+parseFile filename = do
+    input <- TextIO.readFile filename
+    pure $ runParser parseProgram filename input
+
+
+
