@@ -19,7 +19,7 @@ data Node =
     |   AppNode Int Int
     deriving (Show, Eq)
 
-data GmState = GmState {scInst :: M.Map VarName (SCDef, [Inst]), code :: [Inst], stack :: [Int], heap :: [Node]} 
+data GmState = GmState {scInst :: M.Map VarName (SCDef, [Inst]), code :: [Inst], stack :: [Int], heap :: [Node], stdout :: [Node]} 
 
 data Error = ProgramError String | ParseError String deriving (Show, Eq)
 
@@ -113,10 +113,14 @@ unboxFloat (LitNode (Literal "Float" val)) = read val
 boxFloat :: Float -> Node
 boxFloat = LitNode . Literal "Float" . show
 
+printOp :: Impl
+printOp = Impl {name = "print", exec = go}
+    where go state@(GmState {..}) = let node = accessHeap (head stack) heap in state {stack = head stack : stack, stdout = node : stdout }
+
 -- Evaluation
 
 makeGm :: M.Map VarName (SCDef, [Inst]) -> [Inst] -> GmState
-makeGm scInst initCode = GmState {scInst = scInst, code = initCode, stack = [], heap = []}
+makeGm scInst initCode = GmState {scInst = scInst, code = initCode, stack = [], heap = [], stdout = []}
 
 dispatch :: GmState -> GmState
 dispatch state@(GmState {..}) = case code of
@@ -171,11 +175,12 @@ opImpl = M.fromList
     ("+", makeBinop unboxFloat boxFloat "+" (+)), 
     ("-", makeBinop unboxFloat boxFloat "-" (-)), 
     ("*", makeBinop unboxFloat boxFloat "*" (*)),
-    ("/", makeBinop unboxFloat boxFloat "/" (/))
+    ("/", makeBinop unboxFloat boxFloat "/" (/)),
+    ("print", printOp)
     ]
 
 opsMap :: M.Map VarName SCDef
-opsMap = M.fromList [("+", addSC), ("-", subSC), ("*", multSC), ("/", divSC)]
+opsMap = M.fromList [("+", addSC), ("-", subSC), ("*", multSC), ("/", divSC), ("print", printSC)]
 
 addSC :: SCDef
 addSC = SCDef ["x", "y"] (Op "+")
@@ -188,3 +193,6 @@ multSC = SCDef ["x", "y"] (Op "*")
 
 divSC :: SCDef
 divSC = SCDef ["x", "y"] (Op "/")
+
+printSC :: SCDef
+printSC = SCDef ["x"] (Op "print")

@@ -89,7 +89,7 @@ operatorTable :: [[Operator Parser Expr]]
 operatorTable = [[Parser.negate, Parser.sin, Parser.cos], [multiply, divide], [add, Parser.subtract]]
 
 parseTerm :: Parser Expr
-parseTerm = choice' [parseApp, parens parseExpr, parseLiteral, parseVar]
+parseTerm = choice' [parseAbst, parseLet, parseApp, parseLiteral, parseVar, sc *> parens parseExpr]
 
 -- Expression parsers --
 
@@ -106,7 +106,7 @@ parseLiteralStr :: Parser Expr
 parseLiteralStr = Literal "String" . T.unpack <$> parseLiteralStr'
 
 parseLiteral :: Parser Expr
-parseLiteral = parseLiteralNum <|> parseLiteralBool <|> parseLiteralStr
+parseLiteral = parseLiteralNum -- <|> parseLiteralBool <|> parseLiteralStr
 
 parseVar :: Parser Expr
 parseVar = Var . T.unpack <$> try (parseIdent <* notFollowedBy (char ':' <|> char '='))
@@ -136,7 +136,7 @@ parseLet = do
     Let x e1 <$> parseExpr
 
 parseExpr :: Parser Expr
-parseExpr = choice' [sc *> parens parseExpr, parseAbst, parseLet, parseOp, parseApp, parseLiteral, parseVar]
+parseExpr = choice' [parseAbst, parseLet, parseOp, parseApp, parseLiteral, parseVar, sc *> parens parseExpr]
 
 -- Core parsers --
 
