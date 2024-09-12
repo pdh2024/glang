@@ -1,6 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 
-module GMachine where
+module Gmachine where
 
 import Data.Maybe (fromJust)
 
@@ -8,7 +8,7 @@ import Data.List (find)
 import qualified Data.Map as M
 import qualified Data.Set as S
 
-import LowerToGCode 
+import LowerToGcode 
 import Expression
 
 -- G-Machine

@@ -1,0 +1,15 @@
+Test suite spec: RUNNING...
+
+parseLiteralNum
+  parses floats [✔]
+parseLiteralBool
+  parses bools [✔]
+parseApp
+  parses apps [✔]
+parseOp
+  parses ops [✔]
+
+Finished in 0.0023 seconds
+4 examples, 0 failures
+Test suite spec: PASS
+Test suite logged to: /Users/parthdhanotra/Documents/dev/proj/glang/dist-newstyle/build/aarch64-osx/ghc-9.2.7/glang-0.1.0.0/t/spec/test/glang-0.1.0.0-spec.log

@@ -1,5 +1,5 @@
 {-# LANGUAGE TupleSections #-}
-module LowerToGCode where
+module LowerToGcode where
 
 import Control.Monad.State
 import Data.List (partition)

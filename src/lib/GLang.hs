@@ -1,5 +1,5 @@
 
-module GLang where
+module Glang where
 
 import Data.Bifunctor (first)
 import Data.List (partition)
@@ -11,8 +11,8 @@ import Data.Text (Text)
 import Data.Void (Void)
 
 import Parser
-import GMachine
-import LowerToGCode
+import Gmachine 
+import LowerToGcode
 import LambdaLifting
 import Expression
 

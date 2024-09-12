@@ -1,8 +1,8 @@
 module Main where
 
 import System.Environment
-import GMachine
-import GLang
+import Gmachine
+import Glang
 import Expression
 
 main :: IO ()

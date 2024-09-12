@@ -20,7 +20,7 @@ import Expression
 
 type Parser = Parsec Void Text
 
--- Temporary datatype for types
+-- Dummy datatype for types
 
 data Type =
         Prim VarName 
@@ -97,7 +97,7 @@ parseLiteralNum :: Parser Expr
 parseLiteralNum = Literal "Float" . show <$> ((try . lexeme $ L.float) <|> lexeme L.decimal)
 
 parseLiteralBool :: Parser Expr
-parseLiteralBool = Literal "Bool" . show <$> (symbol "True" <|> symbol "False")
+parseLiteralBool = Literal "Bool" . T.unpack <$> (symbol "True" <|> symbol "False")
 
 parseLiteralStr' :: Parser Text
 parseLiteralStr' = lexeme $ T.pack <$> go where go = char '\"' >> manyTill L.charLiteral (char '\"')
@@ -122,7 +122,7 @@ parseOp = makeExprParser parseTerm operatorTable
 
 parseApp :: Parser Expr
 parseApp = do
-    x <- parseVar
+    x <- choice [parens parseExpr, parseVar]
     xs <- many $ choice [parens parseExpr, parseLiteral, parseVar]
     case xs of
         [] -> fail "No argument applied to function."
@@ -193,6 +193,12 @@ parseFile :: FilePath -> IO (Either (ParseErrorBundle Text Void) [ParserResult])
 parseFile filename = do
     input <- TextIO.readFile filename
     pure $ runParser parseProgram filename input
+
+-- For unit tests
+
+isParserError :: Either (ParseErrorBundle s e) a -> Bool
+isParserError (Left _) = True
+isParserError _ = False
 
 
 
