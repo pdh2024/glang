@@ -1,6 +1,8 @@
 
 module Glang where
 
+import System.IO.Unsafe
+import Data.Functor ((<&>))
 import Data.Bifunctor (first)
 import Data.List (partition)
 import Text.Megaparsec
@@ -34,8 +36,12 @@ evalProgramIO filename = do
     pure $ do
         scInst <- lowerOutput
         evalProgram scInst
+    
+evalToOutputIO :: String -> IO (Either Error Node)
+evalToOutputIO = ((>>= evalToOutput) <$>) . lowerIO
         
-gmOutputIO :: String -> IO (Either Error Node)
-gmOutputIO filename = do
-    evalOutput <- evalProgramIO filename
-    pure $ gmOutput <$> evalOutput
+-- For testing
+
+evalToOutputFromFile :: String -> Either Error Node
+evalToOutputFromFile = unsafePerformIO . ((>>= evalToOutput) <$>) . lowerIO
+

@@ -100,7 +100,7 @@ rewindImpl = Impl {name = "rewind", exec = go}
 -- Generate implementations of strict ops
 
 makeBinop :: (Node -> a) -> (a -> Node) -> String -> (a -> a -> a) -> Impl
-makeBinop unbox box ident f = Impl {name = "binop " ++ ident, exec = go}
+makeBinop unbox box ident f = Impl {name = ident, exec = go}
     where   go state@(GmState {..}) =   let (x:y:xs) = stack
                                             xnode = accessHeap x heap
                                             ynode = accessHeap y heap
@@ -130,7 +130,7 @@ dispatch state@(GmState {..}) = case code of
                                                             PushLit e -> pushLitImpl e
                                                             Update k -> updateImpl k
                                                             Pop k -> popImpl k 
-                                                            PerformOp o -> fromJust $ M.lookup o opImpl
+                                                            PerformOp o -> snd $ opImpls M.! o
                                                             MakeApp -> makeAppImpl
                                                             Unwind -> unwindImpl
                                                             Rewind -> rewindImpl
@@ -167,7 +167,41 @@ gmOutput states =   let finalState = last states
                         outIdx = head . stack $ finalState
                         in accessHeap outIdx (heap finalState)
 
+evalToOutput :: M.Map VarName (SCDef, [Inst]) -> Either Error Node
+evalToOutput = (gmOutput <$>) . evalProgram
+
 -- Built-in strict ops
+
+binopImpls :: [Impl]
+binopImpls = 
+    [
+        makeBinop unboxFloat boxFloat "+" (+),
+        makeBinop unboxFloat boxFloat "-" (-),
+        makeBinop unboxFloat boxFloat "*" (*),
+        makeBinop unboxFloat boxFloat "/" (/)
+    ]
+
+unopImpls :: [Impl]
+unopImpls = 
+    [
+        printOp
+    ]
+
+implsToMap :: Int -> [Impl] -> M.Map VarName (Int, Impl)
+implsToMap arity = M.fromList . map (\i -> (name i, (arity, i)))
+
+opImpls :: M.Map VarName (Int, Impl)
+opImpls = implsToMap 2 binopImpls `M.union` implsToMap 1 unopImpls
+
+opToSC :: Int -> VarName -> SCDef
+opToSC arity o = SCDef (show <$> [1..arity]) (Op o)
+
+opsMap :: M.Map VarName SCDef
+opsMap = M.mapWithKey (\name (arity, impl) -> opToSC arity name) opImpls
+
+--
+
+{-
 
 opImpl :: M.Map VarName Impl
 opImpl = M.fromList  
@@ -196,3 +230,5 @@ divSC = SCDef ["x", "y"] (Op "/")
 
 printSC :: SCDef
 printSC = SCDef ["x"] (Op "print")
+
+-}

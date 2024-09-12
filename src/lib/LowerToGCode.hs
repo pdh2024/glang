@@ -53,7 +53,7 @@ lower defs opsMap =  let    idents = S.fromList (map fst defs) `S.union` M.keysS
                             liftedDefs = evalState liftedDefs' (idents, 0)
                         
                             scDefs = foldr step opsMap liftedDefs
-                            scCode = M.map (\scdef -> (scdef, compile scdef)) scDefs
+                            scInst = M.map (\scdef -> (scdef, compile scdef)) scDefs
 
-                            in scCode
+                            in scInst
     where   step (v, (expr, internalMap)) map = M.insert v (caf expr) (M.union internalMap map)
