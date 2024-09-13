@@ -15,7 +15,7 @@ Finished in 0.0024 seconds
 evalToOutputFromFile
   executes evalToOutput with a file as an input [✔]
 
-Finished in 0.0041 seconds
+Finished in 0.1071 seconds
 1 example, 0 failures
 Test suite spec: PASS
 Test suite logged to: /Users/parthdhanotra/Documents/dev/proj/glang/dist-newstyle/build/aarch64-osx/ghc-9.2.7/glang-0.1.0.0/t/spec/test/glang-0.1.0.0-spec.log

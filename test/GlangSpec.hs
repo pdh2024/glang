@@ -15,3 +15,4 @@ glangSpec = do
             evalToOutputFromFile "test/example_prog/prog4.g" `shouldBe` Right (LitNode (Literal "Float" "41.0"))
             evalToOutputFromFile "test/example_prog/prog5.g" `shouldBe` Right (LitNode (Literal "Float" "3.0"))
             evalToOutputFromFile "test/example_prog/prog6.g" `shouldBe` Right (LitNode (Literal "Bool" "False"))
+            evalToOutputFromFile "test/example_prog/fib.g" `shouldBe` Right (LitNode (Literal "Float" "34.0"))
