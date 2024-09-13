@@ -29,7 +29,9 @@ data Inst =
 
 compile' :: M.Map VarName Int -> Expr -> [Inst]
 compile' _ lit@(Literal _ _) = [PushLit lit]
-compile' env (Op o) = concatMap normalizeArg [0..(length env - 1)] ++ [PerformOp o] 
+compile' env (Op o) = case o of
+                        "cond" -> normalizeArg 0 ++ [PerformOp o]
+                        _ -> concatMap normalizeArg [0..(length env - 1)] ++ [PerformOp o] 
 compile' env (Var v) =  if M.member v env
                             then [Push $ fromJust $ M.lookup v env]
                         else [PushSC v]

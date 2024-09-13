@@ -9,7 +9,7 @@ data Expr =
         Literal TypeName Value
     |   Var VarName
     |   Abst VarName Expr
-    |   Op OpName
+    |   Op OpName 
     |   Let VarName Expr Expr
     |   App Expr Expr
     deriving (Show, Eq)
