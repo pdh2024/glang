@@ -85,8 +85,17 @@ multiply = binary "*" (App . App (Var "*"))
 divide :: Operator Parser Expr
 divide = binary "/" (App . App (Var "/"))
 
+and :: Operator Parser Expr
+and = binary "&" (App . App (Var "&"))
+
+or  :: Operator Parser Expr
+or = binary "|" (App . App (Var "|"))
+
+equals :: Operator Parser Expr
+equals = binary "==" (App . App (Var "=="))
+
 operatorTable :: [[Operator Parser Expr]]
-operatorTable = [[Parser.negate, Parser.sin, Parser.cos], [multiply, divide], [add, Parser.subtract]]
+operatorTable = [[equals], [Parser.and], [Parser.or], [Parser.negate, Parser.sin, Parser.cos], [multiply, divide], [add, Parser.subtract]]
 
 parseTerm :: Parser Expr
 parseTerm = choice' [parseAbst, parseLet, parseApp, parseLiteral, parseVar, sc *> parens parseExpr]
@@ -106,10 +115,10 @@ parseLiteralStr :: Parser Expr
 parseLiteralStr = Literal "String" . T.unpack <$> parseLiteralStr'
 
 parseLiteral :: Parser Expr
-parseLiteral = parseLiteralNum -- <|> parseLiteralBool <|> parseLiteralStr
+parseLiteral = parseLiteralNum <|> parseLiteralBool -- <|> parseLiteralStr
 
 parseVar :: Parser Expr
-parseVar = Var . T.unpack <$> try (parseIdent <* notFollowedBy (char ':' <|> char '='))
+parseVar = Var . T.unpack <$> try (parseIdent <* ((void . lookAhead . symbol $ "==") <|> notFollowedBy (char ':' <|> char '=')))
 
 parseAbst :: Parser Expr
 parseAbst = do

@@ -113,9 +113,32 @@ unboxFloat (LitNode (Literal "Float" val)) = read val
 boxFloat :: Float -> Node
 boxFloat = LitNode . Literal "Float" . show
 
+unboxBool :: Node -> Bool
+unboxBool (LitNode (Literal "Bool" val)) = read val
+
+boxBool :: Bool -> Node
+boxBool = LitNode . Literal "Bool" . show
+
 printOp :: Impl
 printOp = Impl {name = "print", exec = go}
-    where go state@(GmState {..}) = let node = accessHeap (head stack) heap in state {stack = head stack : stack, stdout = node : stdout }
+    where   go state@(GmState {..}) = let node = accessHeap (head stack) heap in state {stack = head stack : stack, stdout = node : stdout }
+
+condOp :: Impl
+condOp = Impl {name = "cond", exec = go}
+    where   go state@(GmState {..}) =   let (c:x:y:ys) = stack
+                                            condNode = accessHeap c heap
+                                            condBool = unboxBool condNode
+                                            in  if condBool
+                                                    then state {stack = x : stack}
+                                                else state {stack = y : stack}
+
+equalsOp :: Impl                                            
+equalsOp = Impl {name = "==", exec = go}
+    where   go state@(GmState {..}) =   let x:y:ys = stack
+                                            xNode = accessHeap x heap
+                                            yNode = accessHeap y heap
+                                            res = LitNode (Literal "Bool" (show $ xNode == yNode))
+                                            in state {stack = length heap : stack, heap = res : heap}
 
 -- Evaluation
 
@@ -172,63 +195,38 @@ evalToOutput = (gmOutput <$>) . evalProgram
 
 -- Built-in strict ops
 
-binopImpls :: [Impl]
-binopImpls = 
+ternopImpls :: (Int, [Impl])
+ternopImpls = (3,
+    [
+        condOp
+    ])
+
+binopImpls :: (Int, [Impl])
+binopImpls = (2,
     [
         makeBinop unboxFloat boxFloat "+" (+),
         makeBinop unboxFloat boxFloat "-" (-),
         makeBinop unboxFloat boxFloat "*" (*),
-        makeBinop unboxFloat boxFloat "/" (/)
-    ]
+        makeBinop unboxFloat boxFloat "/" (/),
+        makeBinop unboxBool boxBool "&" (&&),
+        makeBinop unboxBool boxBool "|" (||),
+        equalsOp
+    ])
 
-unopImpls :: [Impl]
-unopImpls = 
+unopImpls :: (Int, [Impl])
+unopImpls = (1,
     [
         printOp
-    ]
+    ])
 
-implsToMap :: Int -> [Impl] -> M.Map VarName (Int, Impl)
-implsToMap arity = M.fromList . map (\i -> (name i, (arity, i)))
+implsToMap :: (Int, [Impl]) -> M.Map VarName (Int, Impl)
+implsToMap (arity, impls) = M.fromList $ map (\i -> (name i, (arity, i))) impls
 
 opImpls :: M.Map VarName (Int, Impl)
-opImpls = implsToMap 2 binopImpls `M.union` implsToMap 1 unopImpls
+opImpls = foldr (\x acc -> implsToMap x `M.union` acc) M.empty [ternopImpls, binopImpls, unopImpls]
 
 opToSC :: Int -> VarName -> SCDef
 opToSC arity o = SCDef (show <$> [1..arity]) (Op o)
 
 opsMap :: M.Map VarName SCDef
 opsMap = M.mapWithKey (\name (arity, impl) -> opToSC arity name) opImpls
-
---
-
-{-
-
-opImpl :: M.Map VarName Impl
-opImpl = M.fromList  
-    [
-    ("+", makeBinop unboxFloat boxFloat "+" (+)), 
-    ("-", makeBinop unboxFloat boxFloat "-" (-)), 
-    ("*", makeBinop unboxFloat boxFloat "*" (*)),
-    ("/", makeBinop unboxFloat boxFloat "/" (/)),
-    ("print", printOp)
-    ]
-
-opsMap :: M.Map VarName SCDef
-opsMap = M.fromList [("+", addSC), ("-", subSC), ("*", multSC), ("/", divSC), ("print", printSC)]
-
-addSC :: SCDef
-addSC = SCDef ["x", "y"] (Op "+")
-
-subSC :: SCDef
-subSC = SCDef ["x", "y"] (Op "-")
-
-multSC :: SCDef
-multSC = SCDef ["x", "y"] (Op "*")
-
-divSC :: SCDef
-divSC = SCDef ["x", "y"] (Op "/")
-
-printSC :: SCDef
-printSC = SCDef ["x"] (Op "print")
-
--}
