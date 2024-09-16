@@ -4,6 +4,7 @@ import Control.Monad.State
 import qualified Data.Set as S
 import qualified Data.Map as M
 import Data.Maybe (isJust)
+import Data.Bifunctor (first)
 
 import Expression
 
@@ -26,6 +27,10 @@ lambdaLift' (Abst param body) = do
     (scIdents, i) <- get
     let scName = "!sc_" ++ show i
     modify ((+1) <$>)
+    
+    -- If an identifier is bound by an abstraction, it should be removed from the set of top-level identifiers
+    -- Otherwise nested abstractions will treat it as "bound" via a top-level definition and compile to pushSC instructions rather than properly lifting it
+    modify (first (S.delete param))
 
     (scBody, scDefs) <- lambdaLift' body
     let free = S.toList $ freeVars (Abst param scBody) (M.keysSet scDefs `S.union` scIdents)
