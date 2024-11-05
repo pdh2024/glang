@@ -10,10 +10,9 @@ cabal install --installdir=.
 
 ## Glang
 
-Glang is a functional programming language in the vein of the ML family. Its implementation lowers programs to bytecode, which is then interpreted. 
- Glang is non-strictly-evaluated, meaning that a function can return a value without evaluating all of its arguments.
+Glang is a non-strictly evaluated, functional programming language in the vein of the ML family. Its implementation lowers programs to bytecode, which is then interpreted. 
 
-A program in Glang specifies an entrypoint (a main function), as well as a series of definitions binding identifiers to expressions.  Expressions are defined in a manner analgous to the lambda calculus - an expression is either a function, a value, or the application of a function to another expression.
+Programs specify an entrypoint (a ```main``` function), as well as a series of definitions binding identifiers to expressions.  Expressions are defined in a manner analgous to the lambda calculus - an expression is either a function, a value, or the application of a function to another expression.
 
 Syntactically, a function is written as a series of parameters separated by periods, then an expression.  The application of a function is written as a series of arguments separated by single spaces, preceded by the identifier of the function.
 
